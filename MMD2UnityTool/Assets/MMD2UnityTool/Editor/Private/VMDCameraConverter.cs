@@ -16,7 +16,10 @@ public class VMDCameraConverter
 	private AnimationClip CreateAnimationClip_(VMDFormat format)
 	{
 
-		AnimationClip clip = new AnimationClip();
+		AnimationClip clip = new AnimationClip()
+		{
+			frameRate = 30,
+		};
 		clip.name = format.name;
 
 		CreateKeysForCamera(format, clip);
@@ -27,7 +30,7 @@ public class VMDCameraConverter
 	void CreateKeysForCamera(VMDFormat format, AnimationClip clip)
 	{
 		const float tick_time = 1f / 30f;
-		const float mmd4unity_unit = 0.085f;
+		const float mmd4unity_unit = 0.08f;
 
 		Keyframe[] posX_keyframes = new Keyframe[format.camera_list.camera_count];
 		Keyframe[] posY_keyframes = new Keyframe[format.camera_list.camera_count];
@@ -36,54 +39,66 @@ public class VMDCameraConverter
 		Keyframe[] rotX_keyframes = new Keyframe[format.camera_list.camera_count];
 		Keyframe[] rotY_keyframes = new Keyframe[format.camera_list.camera_count];
 		Keyframe[] rotZ_keyframes = new Keyframe[format.camera_list.camera_count];
+		Keyframe[] rotW_keyframes = new Keyframe[format.camera_list.camera_count];
 
 		Keyframe[] fov_keyframes = new Keyframe[format.camera_list.camera_count];
 
+		Keyframe[] dis_keyframes = new Keyframe[format.camera_list.camera_count];
+
 		//模拟一个相机的变换,用矩阵变换也可以,从世界坐标转局部坐标会很麻烦
-		var cameraWorldObj = new GameObject();
-		var cameraLocalObj = new GameObject();
-		var cameraWorldTrans = cameraWorldObj.transform;
-		var cameraLocalTrans = cameraLocalObj.transform;
-		cameraLocalTrans.SetParent(cameraWorldTrans);
+		//var cameraWorldObj = new GameObject();
+		//var cameraLocalObj = new GameObject();
+		//var cameraWorldTrans = cameraWorldObj.transform;
+		//var cameraLocalTrans = cameraLocalObj.transform;
+		//cameraLocalTrans.SetParent(cameraWorldTrans);
 
 		for (int i = 0; i < format.camera_list.camera_count; i++)
 		{
 			VMDFormat.CameraData cameraData = format.camera_list.camera[i];
 
 			//位置
-			cameraWorldTrans.localPosition = new Vector3(
+			/*cameraWorldTrans.localPosition = new Vector3(
 				cameraData.location.x * mmd4unity_unit,
 				cameraData.location.y * mmd4unity_unit,
-				cameraData.location.z * mmd4unity_unit);
+				cameraData.location.z * mmd4unity_unit);*/
 
 			//旋转
 			//localEulerAngles取值后将角度设置为绝对值,
 			//https://docs.unity3d.com/cn/2017.4/ScriptReference/Transform-localEulerAngles.html
-			Vector3 rotationAsix = new Vector3(
+			/*Vector3 rotationAsix = new Vector3(
 				-(cameraData.rotation.x) * Mathf.Rad2Deg,
 				-(cameraData.rotation.y) * Mathf.Rad2Deg,
 				-(cameraData.rotation.z) * Mathf.Rad2Deg);
-			cameraWorldTrans.localEulerAngles = rotationAsix;
+			cameraWorldTrans.localEulerAngles = rotationAsix;*/
+
+			Quaternion Quaternion = Quaternion.Euler(new Vector3(
+									cameraData.rotation.x * Mathf.Rad2Deg,
+									-cameraData.rotation.y * Mathf.Rad2Deg,
+									cameraData.rotation.z * Mathf.Rad2Deg));
 
 			//距离,修改局部坐标的Z值
-			cameraLocalTrans.localEulerAngles = Vector3.zero;
-			cameraLocalTrans.localPosition = new Vector3(0, 0, (cameraData.length) * mmd4unity_unit);//Z相反轴,但这里实际值已经经过取反处理
+			//cameraLocalTrans.localEulerAngles = Vector3.zero;
+			//cameraLocalTrans.localPosition = new Vector3(0, 0, (cameraData.length) * mmd4unity_unit);//Z相反轴,但这里实际值已经经过取反处理
 
 			float frameTime = cameraData.frame_no * tick_time;
-			posX_keyframes[i] = new Keyframe(frameTime, cameraLocalTrans.position.x);
-			posY_keyframes[i] = new Keyframe(frameTime, cameraLocalTrans.position.y);
-			posZ_keyframes[i] = new Keyframe(frameTime, cameraLocalTrans.position.z);
+			posX_keyframes[i] = new Keyframe(frameTime, -cameraData.location.x * mmd4unity_unit);
+			posY_keyframes[i] = new Keyframe(frameTime, cameraData.location.y * mmd4unity_unit);
+			posZ_keyframes[i] = new Keyframe(frameTime, -cameraData.location.z * mmd4unity_unit);
 
 			//做动画时最好用原值,localEulerAngles取值后将角度设置为绝对值,在做补间曲线会出问题
-			rotX_keyframes[i] = new Keyframe(frameTime, rotationAsix.x);
-			rotY_keyframes[i] = new Keyframe(frameTime, rotationAsix.y);
-			rotZ_keyframes[i] = new Keyframe(frameTime, rotationAsix.z);
+			rotX_keyframes[i] = new Keyframe(frameTime, Quaternion.x);
+			rotY_keyframes[i] = new Keyframe(frameTime, Quaternion.y);
+			rotZ_keyframes[i] = new Keyframe(frameTime, Quaternion.z);
+			rotW_keyframes[i] = new Keyframe(frameTime, Quaternion.w);
 
 			//视角fov
 			fov_keyframes[i] = new Keyframe(frameTime, cameraData.viewing_angle);
+
+			//摄像机距离
+			dis_keyframes[i] = new Keyframe(frameTime, -cameraData.length * mmd4unity_unit);
 		}
 
-		UnityEngine.Object.DestroyImmediate(cameraWorldObj);
+		//UnityEngine.Object.DestroyImmediate(cameraWorldObj);
 
 		//NOTE:这里"距离"已经与position融合了,所以没法做补间
 		AnimationCurve posX_curve = ToAnimationCurveWithTangentMode(1, AnimationUtility.TangentMode.Free, posX_keyframes, format.camera_list);
@@ -92,18 +107,22 @@ public class VMDCameraConverter
 		AnimationCurve rotX_curve = ToAnimationCurveWithTangentMode(4, AnimationUtility.TangentMode.Free, rotX_keyframes, format.camera_list);
 		AnimationCurve rotY_curve = ToAnimationCurveWithTangentMode(4, AnimationUtility.TangentMode.Free, rotY_keyframes, format.camera_list);
 		AnimationCurve rotZ_curve = ToAnimationCurveWithTangentMode(4, AnimationUtility.TangentMode.Free, rotZ_keyframes, format.camera_list);
+		AnimationCurve rotW_curve = ToAnimationCurveWithTangentMode(4, AnimationUtility.TangentMode.Free, rotW_keyframes, format.camera_list);
+		AnimationCurve dis_curve = ToAnimationCurveWithTangentMode(5, AnimationUtility.TangentMode.Free, dis_keyframes, format.camera_list);
 		AnimationCurve fov_curve = ToAnimationCurveWithTangentMode(6, AnimationUtility.TangentMode.Free, fov_keyframes, format.camera_list);
 
 
-		AnimationUtility.SetEditorCurve(clip, EditorCurveBinding.FloatCurve("", typeof(Transform), "m_LocalPosition.x"), posX_curve);
-		AnimationUtility.SetEditorCurve(clip, EditorCurveBinding.FloatCurve("", typeof(Transform), "m_LocalPosition.y"), posY_curve);
-		AnimationUtility.SetEditorCurve(clip, EditorCurveBinding.FloatCurve("", typeof(Transform), "m_LocalPosition.z"), posZ_curve);
-		AnimationUtility.SetEditorCurve(clip, EditorCurveBinding.FloatCurve("", typeof(Transform), "localEulerAnglesRaw.x"), rotX_curve);   //采用欧拉角插值方式
-		AnimationUtility.SetEditorCurve(clip, EditorCurveBinding.FloatCurve("", typeof(Transform), "localEulerAnglesRaw.y"), rotY_curve);
-		AnimationUtility.SetEditorCurve(clip, EditorCurveBinding.FloatCurve("", typeof(Transform), "localEulerAnglesRaw.z"), rotZ_curve);
+		AnimationUtility.SetEditorCurve(clip, EditorCurveBinding.FloatCurve("", typeof(Transform), "localPosition.x"), posX_curve);
+		AnimationUtility.SetEditorCurve(clip, EditorCurveBinding.FloatCurve("", typeof(Transform), "localPosition.y"), posY_curve);
+		AnimationUtility.SetEditorCurve(clip, EditorCurveBinding.FloatCurve("", typeof(Transform), "localPosition.z"), posZ_curve);
+		AnimationUtility.SetEditorCurve(clip, EditorCurveBinding.FloatCurve("", typeof(Transform), "localRotation.x"), rotX_curve);   //采用欧拉角插值方式
+		AnimationUtility.SetEditorCurve(clip, EditorCurveBinding.FloatCurve("", typeof(Transform), "localRotation.y"), rotY_curve);
+		AnimationUtility.SetEditorCurve(clip, EditorCurveBinding.FloatCurve("", typeof(Transform), "localRotation.z"), rotZ_curve);
+		AnimationUtility.SetEditorCurve(clip, EditorCurveBinding.FloatCurve("", typeof(Transform), "localRotation.w"), rotW_curve);
 
+		AnimationUtility.SetEditorCurve(clip, EditorCurveBinding.FloatCurve("Distance", typeof(Transform), "localPosition.z"), dis_curve);
 
-		AnimationUtility.SetEditorCurve(clip, EditorCurveBinding.FloatCurve("", typeof(Camera), "field of view"), fov_curve);
+		AnimationUtility.SetEditorCurve(clip, EditorCurveBinding.FloatCurve("Distance/Camera", typeof(Camera), "field of view"), fov_curve);
 	}
 
 	//经过观察得知interpolation前四位分别是(x1,x2)(y1,y2)
@@ -232,6 +251,20 @@ public class VMDCameraConverter
 			AnimationUtility.SetKeyLeftTangentMode(curve, i, mode);
 			AnimationUtility.SetKeyRightTangentMode(curve, i, mode);
 
+		}
+		for(int j = 0; j < keyframes.Length; j++)
+		{
+			if(j<keyframes.Length - 1)
+			{
+				int StartFrame = (int)(keyframes[j].time * 30f);
+				int EndFrame = (int)(keyframes[j+1].time * 30f);
+
+				if(EndFrame == StartFrame+1)
+				{
+					//Debug.Log(StartFrame);
+					AnimationUtility.SetKeyRightTangentMode(curve, j, AnimationUtility.TangentMode.Constant);
+				}
+			}
 		}
 		return curve;
 	}
